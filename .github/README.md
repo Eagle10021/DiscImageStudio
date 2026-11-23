@@ -60,7 +60,8 @@ Disc Image Studio converts an image into data that satisfies the physical-layer 
 A native desktop front-end for Linux with the same **Design → Preview → Export → Burn** workflow as the Windows app: a layer
 canvas with drag and drop, tone controls with a live preview, CD / DVD / Blu-ray export with the built-in disc presets, disc
 detection with automatic preset matching, and burning through `growisofs` / `cdrecord` with a live progress bar and a disc
-that spins at the drive's real RPM. It follows your Material You colours and adapts to any window size.
+that spins at the drive's real RPM. A DVD **Safe tail** keeps the end of the disc readable and holds a real `Burn info.txt` recording the
+machine, drive, disc and speed it was made with. It follows your Material You colours and adapts to any window size.
 
 <table>
 <tr>
