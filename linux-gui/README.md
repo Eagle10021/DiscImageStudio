@@ -29,6 +29,9 @@ Windows app: **Design → Preview → Export → Burn**.
 - **Burn** — detects the disc in the drive (type, media ID, blank/written, capacity) and suggests the matching preset,
   warns when an image was made for a different disc, live progress with a **wavy progress bar** and a disc that spins at
   the drive's real RPM, mount / unmount buttons.
+- **Safe tail + `Burn info.txt`** (DVD) — the last few MiB are written as ordinary, readable data so drives and players can read the end of the
+  disc, and a real text file there records the project, the machine and system that made it, and later the drive, disc and speed it was burnt
+  with. The **Disc note** button reads it back from the disc.
 - **Material 3 Expressive** look driven by your Material You colours (reads `~/.config/kdeglobals`, follows wallpaper and
   light/dark changes live).
 - Adaptive layout: no scroll bars; it tightens spacing and collapses the side rail as the window shrinks.
@@ -49,6 +52,8 @@ disc-image-studio-gui
 
 - A picture mostly in black and white with **dither 0–40 %** shows far more clearly than a busy photo.
 - Rewritable DVD+RW gave darker blacks than DVD-R in testing; results depend on disc, drive and write speed.
+- With files at the **inner ring**, set **Safe tail** (32 MiB is about 0.2 mm of picture) so the end of the disc is readable; with files on the
+  **outer ring** the tail is the files, so the setting is off.
 - Put stored files on the **outer ring**: with files at the inner ring the system could not identify the disc
   (the last sectors were unreadable), with the outer ring it mounted normally.
 - If a disc's picture area is slow to read and the desktop will not mount it, run `sudo linux-gui/setup-disc-mount.sh`

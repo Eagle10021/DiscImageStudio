@@ -182,6 +182,32 @@ def set_scale(s: float) -> None:
     SCALE = s
 
 
+def _arrow_icons(p: Palette) -> dict[str, str]:
+    """Chevron icons for dropdowns and number boxes, drawn in the current palette colours."""
+    from PyQt6.QtCore import QPointF, Qt
+    from PyQt6.QtGui import QImage, QPainter, QPen
+    d = Path.home() / ".cache" / "disc-image-studio"
+    d.mkdir(parents=True, exist_ok=True)
+    out = {}
+    for name, colour, pts in (
+            ("down", p.on_surface_variant, [(8, 14), (16, 22), (24, 14)]),
+            ("up", p.on_surface_variant, [(8, 22), (16, 14), (24, 22)]),
+            ("down-dim", mix(p.surface, p.on_surface, 0.35), [(8, 14), (16, 22), (24, 14)]),
+            ("up-dim", mix(p.surface, p.on_surface, 0.35), [(8, 22), (16, 14), (24, 22)])):
+        f = d / f"arrow-{name}-{colour.lstrip('#')}.png"
+        if not f.exists():
+            img = QImage(32, 32, QImage.Format.Format_ARGB32)
+            img.fill(Qt.GlobalColor.transparent)
+            q = QPainter(img)
+            q.setRenderHint(QPainter.RenderHint.Antialiasing)
+            q.setPen(QPen(QColor(colour), 3.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+            q.drawPolyline([QPointF(x, y) for x, y in pts])
+            q.end()
+            img.save(str(f))
+        out[name] = str(f)
+    return out
+
+
 def stylesheet(p: Palette | None = None, scale: float | None = None) -> str:
     import re
     css = _stylesheet(p)
@@ -194,6 +220,7 @@ def stylesheet(p: Palette | None = None, scale: float | None = None) -> str:
 def _stylesheet(p: Palette | None = None) -> str:
     p = p or P
     check = _check_icon(p)
+    ar = _arrow_icons(p)
     state = lambda base, ov, t: mix(base, ov, t)       # hover = +8% state layer, pressed = +12%
     return f"""
 * {{ font-family: 'Roboto', 'Noto Sans', sans-serif; font-size: 14px; }}
@@ -240,10 +267,21 @@ QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{ background: {p.surface_highest
   border-radius: 14px; padding: 8px 12px; selection-background-color: {p.primary}; selection-color: {p.on_primary}; }}
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{ border: 2px solid {p.primary}; }}
 QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {{ color: {mix(p.surface, p.on_surface, 0.40)}; }}
-QComboBox::drop-down {{ border: none; width: 28px; }}
+QComboBox {{ padding-right: 34px; }}
+QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: center right; width: 34px; border: none; background: transparent; }}
+QComboBox::down-arrow {{ image: url({ar['down']}); width: 18px; height: 18px; }}
+QComboBox::down-arrow:disabled {{ image: url({ar['down-dim']}); }}
+QComboBox:on {{ border: 2px solid {p.primary}; }}
 QComboBox QAbstractItemView {{ background: {p.surface_container}; color: {p.on_surface}; border: 1px solid transparent; border-radius: 16px; padding: 6px;
   selection-background-color: {p.secondary_container}; selection-color: {p.on_secondary_container}; outline: 0; }}
-QSpinBox::up-button, QSpinBox::down-button, QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{ width: 18px; border: none; background: transparent; }}
+QSpinBox, QDoubleSpinBox {{ padding-right: 30px; }}
+QSpinBox::up-button, QDoubleSpinBox::up-button {{ subcontrol-origin: border; subcontrol-position: top right; width: 26px; height: 18px; border: none; background: transparent; margin-top: 3px; margin-right: 3px; }}
+QSpinBox::down-button, QDoubleSpinBox::down-button {{ subcontrol-origin: border; subcontrol-position: bottom right; width: 26px; height: 18px; border: none; background: transparent; margin-bottom: 3px; margin-right: 3px; }}
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover, QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{ background: {p.surface_high}; border-radius: 6px; }}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url({ar['up']}); width: 14px; height: 14px; }}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url({ar['down']}); width: 14px; height: 14px; }}
+QSpinBox::up-arrow:disabled, QDoubleSpinBox::up-arrow:disabled {{ image: url({ar['up-dim']}); }}
+QSpinBox::down-arrow:disabled, QDoubleSpinBox::down-arrow:disabled {{ image: url({ar['down-dim']}); }}
 
 QPlainTextEdit, QListWidget#layers {{ background: {p.surface_container}; color: {p.on_surface}; border: 1px solid transparent; border-radius: 20px; padding: 10px; }}
 QListWidget#layers::item {{ padding: 10px 12px; border-radius: 14px; }}
@@ -253,6 +291,9 @@ QListWidget#layers::item:hover:!selected {{ background: {p.surface_high}; }}
 QGraphicsView {{ background: {p.surface_lowest}; border: 1px solid transparent; border-radius: 28px; }}
 
 QCheckBox::indicator {{ width: 20px; height: 20px; border-radius: 6px; border: 2px solid {p.outline}; background: transparent; }}
+QCheckBox::indicator:hover {{ border-color: {p.primary}; }}
+QCheckBox:disabled {{ color: {mix(p.surface, p.on_surface, 0.40)}; }}
+QCheckBox::indicator:disabled {{ border-color: {mix(p.surface, p.on_surface, 0.25)}; }}
 QCheckBox::indicator:checked {{ background: {p.primary}; border-color: {p.primary}; image: url({check}); }}
 
 QSlider::groove:horizontal {{ height: 6px; background: {p.surface_highest}; border-radius: 3px; }}

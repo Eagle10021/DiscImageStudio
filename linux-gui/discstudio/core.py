@@ -13,6 +13,7 @@ import shutil
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+APP_VERSION = "1.0"
 CLI_DIR = Path(os.environ.get("DISCSTUDIO_CLI", Path.home() / ".local/share/disc-image-studio/cli"))
 CLI_BIN = CLI_DIR / "disc-image-studio"
 DATA_DIR = Path.home() / ".local/share/disc-image-studio"
@@ -102,6 +103,8 @@ class Project:
     cd_interleave: bool = True
     bd_invert: bool = False
     dvd_compat: int = 0                  # 0 off, 1..3
+    tail_note: bool = True               # write 'Burn info.txt' into the safe tail
+    safe_tail_mib: int = 32              # DVD: last N MiB rewritten as ordinary data so the end of the disc reads cleanly (0 = off)
     image_path: str = ""                 # existing image chosen with "Load image…" (used for preview/burn)
     path: str = ""                       # .discproj location, not serialised
 
@@ -162,6 +165,31 @@ def output_path(p: Project) -> Path:
     if p.kind == "cd" and p.cd_audio:
         return base.with_suffix(".wav")
     return base.with_suffix(".iso")
+
+
+def safe_tail_applies(p: Project) -> bool:
+    """Only for DVD images, and never when the stored files sit at the outer ring (they live in the tail)."""
+    return p.kind == "dvd" and p.safe_tail_mib > 0 and not (p.data_dir and p.files_outer)
+
+
+def apply_safe_tail(iso: Path, mib: int) -> int:
+    """Overwrites the last `mib` MiB of a DVD image with zeros (ordinary, readable data).
+
+    The picture area is chosen to look good, not to be easy to read; some drives and players read the last
+    sectors first (to learn the disc size) and give up when those are picture data. The length is rounded
+    down to whole 16-sector ECC blocks. Returns the number of sectors written.
+    """
+    size = iso.stat().st_size
+    sectors = (size // 2048)
+    n = min(mib * 512, max(0, sectors // 4)) // 16 * 16        # 1 MiB = 512 sectors; never more than a quarter
+    if n <= 0:
+        return 0
+    with open(iso, "r+b") as f:
+        f.seek((sectors - n) * 2048)
+        chunk = bytes(2048 * 16)
+        for _ in range(n // 16):
+            f.write(chunk)
+    return n
 
 
 def burn_image(p: Project) -> Path:
@@ -338,7 +366,8 @@ def detect_disc(device: str) -> dict:
     cap = grab(r"(?:unformatted|formatted):\s*(\d+)\*2048") or grab(r"00/(\d+)\s+R@")
     exact = bool(grab(r"(?:unformatted|formatted):\s*(\d+)\*2048"))
     cap_blocks = (int(cap) + (0 if exact else 1)) if cap.isdigit() else 0
-    d = {"media": media, "media_id": re.sub(r"\s+", "/", grab(r"Media ID:\s*(.+)")), "status": grab(r"Disc status:\s*(\S+)"),
+    drv = re.search(r"INQUIRY:\s*\[(.*?)\]\[(.*?)\]", out)
+    d = {"drive": (" ".join(drv.group(i).strip() for i in (1, 2)) if drv else ""), "media": media, "media_id": re.sub(r"\s+", "/", grab(r"Media ID:\s*(.+)")), "status": grab(r"Disc status:\s*(\S+)"),
          "free_bytes": int(free) * 2048 if free.isdigit() else 0, "capacity_bytes": cap_blocks * 2048 if cap else 0, "max_speed": grab(r"Write Speed #0:\s*([\d.]+x)"),
          "rewritable": "RW" in media or "RAM" in media}
     m = media.upper()

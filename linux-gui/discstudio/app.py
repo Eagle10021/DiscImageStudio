@@ -20,9 +20,9 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBox,
                              QPushButton, QSizePolicy, QSlider, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
                              QGraphicsItem, QGraphicsPathItem)
 
-from . import compose, theme
-from .core import (CONFIG_DIR, CLI_BIN, KIND_NAMES, KINDS, Layer, Project, burn_command, burn_tools,
-                   cli_available, data_region, spin_rpm, detect_disc, generate_args, human_size, burn_image, list_drives, load_presets, output_path,
+from . import compose, discnote, theme
+from .core import (APP_VERSION, CONFIG_DIR, CLI_BIN, KIND_NAMES, KINDS, Layer, Project, burn_command, burn_tools,
+                   apply_safe_tail, cli_available, data_region, safe_tail_applies, spin_rpm, detect_disc, generate_args, human_size, burn_image, list_drives, load_presets, output_path,
                    preset_title, projection_args, readback_args)
 
 STYLE = theme.stylesheet()   # kept for tests that import it; the app re-applies it when the Material You palette changes
@@ -1108,11 +1108,27 @@ class ExportPage(QWidget):
         self.compat = QComboBox()
         self.compat.addItems(["Off", "1 – light", "2 – strong black", "3 – strong black (zonal)"])
         self.compat.activated.connect(self.fields_changed)
+        self.tail = QComboBox()
+        for label, mib in (("Off", 0), ("8 MiB", 8), ("32 MiB (recommended)", 32), ("64 MiB", 64), ("128 MiB", 128)):
+            self.tail.addItem(label, mib)
+        self.tail.setToolTip("DVD only: the last few MiB are written as ordinary data, so players and the desktop "
+                             "can read the end of the disc (they often check it first). Costs a very thin outer ring "
+                             "of the picture (32 MiB is about 0.2 mm). Not used when files are on the outer ring.")
+        self.tail.activated.connect(self.fields_changed)
         self.invert = QCheckBox("Swap 3T/6T assignment")
         self.invert.toggled.connect(self.fields_changed)
+        self.tail_note = QCheckBox("Add 'Burn info.txt'")
+        self.tail_note.setToolTip("A text file in the tail: project, date, this machine and system, settings, and later the "
+                                  "drive, disc and speed it was burnt with")
+        self.tail_note.toggled.connect(self.fields_changed)
+        tr = QHBoxLayout()
+        tr.addWidget(self.tail)
+        tr.addWidget(self.tail_note)
+        tr.addStretch(1)
         of.addRow("CD content", self.cd_mode)
         of.addRow("", self.interleave)
         of.addRow("DVD write compatibility", self.compat)
+        of.addRow("Safe tail", tr)
         of.addRow("", self.invert)
         self.out_label = ElidedLabel()
         self.out_label.setObjectName("sub")
@@ -1195,6 +1211,11 @@ class ExportPage(QWidget):
         self.interleave.setChecked(p.cd_interleave)
         self.interleave.setEnabled(p.kind == "cd" and p.cd_audio)
         self.compat.setCurrentIndex(p.dvd_compat)
+        self._set_tail(p.safe_tail_mib)
+        self.tail_note.setChecked(p.tail_note)
+        tail_ok = p.kind == "dvd" and not (p.data_dir and p.files_outer)
+        self.tail.setEnabled(tail_ok)
+        self.tail_note.setEnabled(tail_ok)
         self.compat.setEnabled(p.kind == "dvd")
         self.invert.setChecked(p.bd_invert)
         self.invert.setEnabled(p.kind == "bd")
@@ -1211,6 +1232,13 @@ class ExportPage(QWidget):
         self.out_label.setText(str(output_path(p)))
         self._loading = False
         self.disc.set_project(p)
+
+    def _set_tail(self, mib: int) -> None:
+        i = self.tail.findData(mib)
+        if i < 0:                                   # a value from an older project that is not in the list
+            self.tail.addItem(f"{mib} MiB", mib)
+            i = self.tail.count() - 1
+        self.tail.setCurrentIndex(i)
 
     def kind_changed(self) -> None:
         self.win.apply_kind(self.kind.currentData())
@@ -1229,11 +1257,16 @@ class ExportPage(QWidget):
         p.cd_audio = self.cd_mode.currentIndex() == 0
         p.cd_interleave = self.interleave.isChecked()
         p.dvd_compat = self.compat.currentIndex()
+        p.safe_tail_mib = int(self.tail.currentData() or 0)
+        p.tail_note = self.tail_note.isChecked()
         p.bd_invert = self.invert.isChecked()
         p.data_dir = self.files.text()
         p.volume_label = self.label.text() or "DISC_IMAGE"
         p.files_outer = self.outer.currentIndex() == 1
         self.win.proj_label.setText(f"{p.name}\n{KIND_NAMES[p.kind]} · {p.preset_id}")
+        tail_ok = p.kind == "dvd" and not (p.data_dir and p.files_outer)
+        self.tail.setEnabled(tail_ok)
+        self.tail_note.setEnabled(tail_ok)
         self._loading = True
         self.cd_mode.setEnabled(p.kind == "cd")
         self.interleave.setEnabled(p.kind == "cd" and p.cd_audio)
@@ -1297,11 +1330,46 @@ class ExportPage(QWidget):
             return
         self.log.appendPlainText(line)
 
+    def write_note(self, out: Path, n: int) -> None:
+        p = self.win.p
+        t = p.tone
+        preset = next((preset_title(x) for x in self.win.presets[p.kind] if x["id"] == p.preset_id), p.preset_id)
+        files = "none"
+        if p.data_dir and Path(p.data_dir).is_dir():
+            cnt = tot = 0
+            for root, _d, fs in os.walk(p.data_dir):
+                for fn in fs:
+                    cnt += 1
+                    try:
+                        tot += os.path.getsize(os.path.join(root, fn))
+                    except OSError:
+                        pass
+            files = f"{cnt} files ({human_size(tot)}) at the {'outer' if p.files_outer else 'inner'} ring, label {p.volume_label}"
+        note = discnote.build_note(p.name, f"{KIND_NAMES[p.kind]}, {preset}",
+                                   f"dither {t.dither}%, gamma {'on' if t.gamma else 'off'}, brightness {t.brightness}",
+                                   files, APP_VERSION)
+        try:
+            res = discnote.add_note(str(out), n, note)
+        except Exception as e:  # noqa: BLE001
+            self.log.appendPlainText(f"Burn info.txt could not be written: {e}")
+            return
+        if res["iso"] and res["joliet"]:
+            self.log.appendPlainText("Burn info.txt added to the disc (visible as a normal file).")
+        elif res["written"]:
+            self.log.appendPlainText("Burn info.txt is in the tail but could not be listed in the filesystem "
+                                     "(the root directory is full), so it can only be read with a tool.")
+
     def on_done(self, code: int) -> None:
         self.bar.hide()
         out = output_path(self.win.p)
         if code == 0 and out.exists():
             self.disc.set_fraction(1.0)
+            if safe_tail_applies(self.win.p):
+                n = apply_safe_tail(out, self.win.p.safe_tail_mib)
+                if n:
+                    self.log.appendPlainText(f"\nSafe tail: last {n:,} sectors ({n * 2048 // 1048576} MiB) rewritten as ordinary data.")
+                    if self.win.p.tail_note:
+                        self.write_note(out, n)
             self.log.appendPlainText(f"\nDone: {out} ({human_size(out.stat().st_size)})")
             self.win.statusBar().showMessage(f"Exported {out.name}", 6000)
             self.win.burn.refresh()
@@ -1324,6 +1392,24 @@ class DetectThread(QThread):
         except Exception as e:  # noqa: BLE001
             d = {"error": f"Could not read the disc: {e}"}
         self.done.emit(d)
+
+
+class NoteThread(QThread):
+    """Reads Burn info.txt from the disc in the background (a slow disc can take a long time)."""
+    done = pyqtSignal(str, str)
+
+    def __init__(self, dev: str):
+        super().__init__()
+        self.dev = dev
+
+    def run(self) -> None:
+        try:
+            with open(self.dev, "rb") as f:
+                self.done.emit(discnote.read_note(f) or "", "")
+        except PermissionError:
+            self.done.emit("", f"No permission to read {self.dev} (your user needs to be in the 'optical' group).")
+        except Exception as e:  # noqa: BLE001
+            self.done.emit("", f"Could not read the disc: {e}")
 
 
 class DiscProgress(QWidget):
@@ -1464,8 +1550,12 @@ class BurnPage(QWidget):
         mb.clicked.connect(self.mount_disc)
         ub2 = QPushButton("Unmount")
         ub2.clicked.connect(self.unmount_disc)
+        nb = QPushButton("Disc note")
+        nb.setToolTip("Read 'Burn info.txt' from the disc in the drive")
+        nb.clicked.connect(self.read_disc_note)
         ir.addWidget(mb)
         ir.addWidget(ub2)
+        ir.addWidget(nb)
         gf.addRow("Disc in drive", ir)
         self.detected: dict = {}
         self.drive = QComboBox()
@@ -1554,6 +1644,33 @@ class BurnPage(QWidget):
 
     def unmount_disc(self) -> None:
         self._run_mount(False)
+
+    def read_disc_note(self) -> None:
+        dev = self.drive.currentText()
+        if not dev.startswith("/dev"):
+            QMessageBox.information(self, "Disc note", "No optical drive selected.")
+            return
+        self.disc_info.setText("Reading the note from the disc… (can take a while on a slow disc)")
+        self._note_thread = NoteThread(dev)
+        self._note_thread.done.connect(self._note_done)
+        self._note_thread.start()
+
+    def _note_done(self, text: str, err: str) -> None:
+        self._note_thread = None
+        self.disc_info.setText("")
+        if err:
+            QMessageBox.warning(self, "Disc note", err)
+        elif not text:
+            QMessageBox.information(self, "Disc note", "No 'Burn info.txt' on this disc.")
+        else:
+            box = QMessageBox(self)
+            box.setWindowTitle("Burn info.txt")
+            box.setText("The note stored on this disc:")
+            box.setInformativeText("")
+            box.setDetailedText(text)
+            box.setStyleSheet("QLabel { min-width: 520px; font-family: monospace; }")
+            box.setText(text)
+            box.exec()
 
     def load_image(self) -> None:
         start = str(Path(self.win.p.image_path).parent) if self.win.p.image_path else self.win.p.output_dir
@@ -1702,6 +1819,15 @@ class BurnPage(QWidget):
             return
         self.log.clear()
         self.disc.set_project(p)
+        try:
+            d = self.detected or {}
+            sp = self.speed.currentText()
+            speed = f"automatic (drive up to {d.get('max_speed', '?')})" if sp == "Automatic" else f"{sp}x"
+            media = f"{d.get('media', '?')}  {d.get('media_id', '')}".strip()
+            if discnote.stamp_burn(str(burn_image(p)), d.get("drive", "") or "?", media, speed):
+                self.log.appendPlainText("Burn details written into Burn info.txt.")
+        except Exception as e:  # noqa: BLE001
+            self.log.appendPlainText(f"(could not update Burn info.txt: {e})")
         self.log.appendPlainText("$ " + " ".join(shlex.quote(a) for a in c))
         self.go.setEnabled(False)
         self.runner.start(c[0], c[1:])
