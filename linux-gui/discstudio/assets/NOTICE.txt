@@ -1,0 +1,4 @@
+logo.png is the application icon of the upstream project Disc Image Studio
+(https://github.com/JiaFeiMiao-K-Cat/DiscImageStudio, src/DiscImageStudio.App/Assets/DiscImageStudio-256.png).
+Disc Image Studio and its assets are licensed GPL-3.0-or-later; see LICENSE in the upstream repository.
+It is used here unmodified, with attribution, as the icon of this independent Linux front-end.
