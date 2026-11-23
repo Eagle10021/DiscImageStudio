@@ -6,6 +6,19 @@ Windows app: **Design → Preview → Export → Burn**.
 > The Windows GUI (WPF) and the IMAPI burner are Windows-only. This front-end drives the portable CLI in `src/`
 > and burns with `growisofs` / `cdrecord`. Burning is experimental: use expendable discs.
 
+## Screenshots
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/ui-design.png" alt="Design" width="100%"><br><sub><b>Design</b> — layer canvas with drag and drop, tone controls and a live black-and-white preview</sub></td>
+<td width="50%"><img src="docs/images/ui-preview.png" alt="Preview" width="100%"><br><sub><b>Preview</b> — how the picture lands on the disc before anything is written</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/ui-export.png" alt="Export" width="100%"><br><sub><b>Export</b> — disc presets, stored files on the inner or outer ring, project save and open</sub></td>
+<td width="50%"><img src="docs/images/ui-burn.png" alt="Burn" width="100%"><br><sub><b>Burn</b> — disc detection, preset matching, live progress and a disc that spins at the drive's RPM</sub></td>
+</tr>
+</table>
+
 ## Features
 
 - **Design** — layer canvas (drag, scroll to scale, rotate, opacity, order), drag-and-drop images, dither / brightness /

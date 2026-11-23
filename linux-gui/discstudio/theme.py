@@ -217,7 +217,7 @@ QListWidget#nav {{ background: transparent; border: none; outline: 0; padding: 4
 QListWidget#nav::item {{ padding: 14px 18px; margin: 3px 10px; border-radius: 22px; color: {p.on_surface_variant}; }}
 QListWidget#nav::item:hover {{ background: {mix(p.surface_lowest, p.on_surface, 0.08)}; }}
 QListWidget#nav::item:selected {{ background: {p.secondary_container}; color: {p.on_secondary_container}; font-weight: 500; }}
-QLabel#brand {{ font-size: 19px; font-weight: 500; color: {p.primary}; padding: 6px 18px 14px; }}
+QLabel#brand {{ font-size: 17px; font-weight: 500; color: {p.primary}; padding: 0px; }}
 
 /* cards */
 QGroupBox {{ background: {p.surface_low}; border: 1px solid transparent; border-radius: 28px; margin-top: 18px; padding: 16px 12px 8px; }}

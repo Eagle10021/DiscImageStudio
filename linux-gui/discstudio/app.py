@@ -115,10 +115,11 @@ class ScaledImage(QLabel):
 class ElidedLabel(QLabel):
     """One-line label that shortens long paths in the middle instead of forcing the layout wide."""
 
-    def __init__(self, text: str = ""):
+    def __init__(self, text: str = "", strong: bool = False):
         super().__init__()
         self._full = ""
-        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self._strong = strong                 # True = main text colour, False = secondary colour
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.setText(text)
 
     def setText(self, text: str) -> None:  # noqa: N802
@@ -127,14 +128,14 @@ class ElidedLabel(QLabel):
         self.update()
 
     def minimumSizeHint(self):  # noqa: N802
-        return QSize(40, super().sizeHint().height() if self._full else 20)
+        return QSize(40, self.fontMetrics().height() + 4)
 
     def sizeHint(self):  # noqa: N802
         return QSize(self.fontMetrics().horizontalAdvance(self._full) + 4, self.fontMetrics().height() + 4)
 
     def paintEvent(self, _e):  # noqa: N802
         qp = QPainter(self)
-        qp.setPen(self.palette().color(self.foregroundRole()))
+        qp.setPen(QColor(theme.P.on_surface if self._strong else theme.P.on_surface_variant))   # QSS does not set the palette
         qp.drawText(self.rect(), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                     self.fontMetrics().elidedText(self._full, Qt.TextElideMode.ElideMiddle, self.width()))
 
@@ -255,7 +256,7 @@ class Studio(QMainWindow):
         side = QWidget()
         side.setObjectName("rail")
         self.rail = side
-        side.setFixedWidth(176)
+        side.setFixedWidth(196)
         sl = QVBoxLayout(side)
         sl.setContentsMargins(0, 12, 0, 8)
         brand_row = QWidget()
@@ -344,7 +345,7 @@ class Studio(QMainWindow):
                         lab.setVisible(level < 2)
         if collapsed != self._collapsed:
             self._collapsed = collapsed
-            self.rail.setFixedWidth(76 if collapsed else 176)
+            self.rail.setFixedWidth(76 if collapsed else 196)
             for i, (name, icon) in enumerate(self.NAV):
                 self.nav.item(i).setText(icon if collapsed else f"{icon}   {name}")
                 self.nav.item(i).setToolTip(name)
@@ -636,9 +637,18 @@ class DesignPage(QWidget):
         self.pw.valueChanged.connect(self.set_width)
         self.pr.valueChanged.connect(lambda v: self.set_prop("rotation", v))
         self.po.valueChanged.connect(lambda v: self.set_prop("opacity", v / 100))
-        fit = QPushButton("Fit")
-        fit.setToolTip("Fit to recording area")
-        fit.clicked.connect(self.fit_layer)
+        fit = QWidget()
+        fl = QHBoxLayout(fit)
+        fl.setContentsMargins(0, 0, 0, 0)
+        fl.setSpacing(6)
+        b_fit = QPushButton("Fit")
+        b_fit.setToolTip("Whole image inside the disc (longer side = disc diameter)")
+        b_fit.clicked.connect(lambda: self.fit_layer(False))
+        b_fill = QPushButton("Fill")
+        b_fill.setToolTip("Cover the whole disc (shorter side = disc diameter); the long side is cropped")
+        b_fill.clicked.connect(lambda: self.fit_layer(True))
+        fl.addWidget(b_fit)
+        fl.addWidget(b_fill)
         pg_.addWidget(self.px, 0, 0)
         pg_.addWidget(self.py, 0, 1)
         pg_.addWidget(self.pw, 1, 0)
@@ -810,11 +820,12 @@ class DesignPage(QWidget):
             self.refresh()
             self.list.setCurrentRow(n)
 
-    def fit_layer(self) -> None:
+    def fit_layer(self, fill: bool = False) -> None:
         L = self.current()
         if L:
             img = compose.load_image(L.path)
-            L.scale = (2 * self.win.p.geo.r1) / max(img.width(), img.height())
+            side = min(img.width(), img.height()) if fill else max(img.width(), img.height())
+            L.scale = (2 * self.win.p.geo.r1) / side
             L.x = L.y = 0
             self.after_layer_edit(L)
 
@@ -1169,6 +1180,7 @@ class ExportPage(QWidget):
         p = self.win.p
         self._loading = True
         self.name.setText(p.name)
+        self.name.setCursorPosition(0)
         self.proj_path.setText(p.path or "Not saved yet (File ▸ Save, or the buttons above)")
         self.kind.setCurrentIndex(KINDS.index(p.kind))
         self.preset.clear()
@@ -1177,6 +1189,7 @@ class ExportPage(QWidget):
         i = self.preset.findData(p.preset_id)
         self.preset.setCurrentIndex(max(0, i))
         self.outdir.setText(p.output_dir)
+        self.outdir.setCursorPosition(0)
         self.cd_mode.setCurrentIndex(0 if p.cd_audio else 1)
         self.cd_mode.setEnabled(p.kind == "cd")
         self.interleave.setChecked(p.cd_interleave)
@@ -1186,7 +1199,9 @@ class ExportPage(QWidget):
         self.invert.setChecked(p.bd_invert)
         self.invert.setEnabled(p.kind == "bd")
         self.files.setText(p.data_dir)
+        self.files.setCursorPosition(0)
         self.label.setText(p.volume_label)
+        self.label.setCursorPosition(0)
         self.outer.setCurrentIndex(1 if p.files_outer else 0)
         files_ok = not (p.kind == "cd" and p.cd_audio)
         for w in (self.files, self.label, self.outer):
@@ -1234,12 +1249,14 @@ class ExportPage(QWidget):
         d = QFileDialog.getExistingDirectory(self, "Output folder", self.outdir.text())
         if d:
             self.outdir.setText(d)
+            self.outdir.setCursorPosition(0)
             self.fields_changed()
 
     def browse_files(self) -> None:
         d = QFileDialog.getExistingDirectory(self, "Folder to store on the disc", self.files.text() or str(Path.home()))
         if d:
             self.files.setText(d)
+            self.files.setCursorPosition(0)
             self.fields_changed()
 
     def generate(self) -> None:
@@ -1421,7 +1438,7 @@ class BurnPage(QWidget):
         lay.addWidget(h1("Burn", "Experimental. Use blank, sacrificial discs. A write that fails part way usually ruins the disc."))
         gb = QGroupBox("Write")
         gf = QFormLayout(gb)
-        self.image = ElidedLabel()
+        self.image = ElidedLabel(strong=True)
         ib = QHBoxLayout()
         ib.addWidget(self.image, 1)
         lb = QPushButton("Load image…")
