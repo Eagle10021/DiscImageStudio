@@ -126,6 +126,12 @@ if (args is ["--test-design-composite-race"])
     return;
 }
 
+if (args is ["--test-calibration-boundary"])
+{
+    CalibrationBoundaryFitterTests.Run();
+    return;
+}
+
 if (args is ["--benchmark-cd-pitch"])
 {
     CdCubicPitchTests.Benchmark();
@@ -274,7 +280,10 @@ AppCubicMediaTests.Run();
 CalibrationEncoderTests.Run();
 CalibrationCoreTests.Run();
 CalibrationHalfDiscArtworkTests.Run();
-CalibrationBoundaryFitterTests.Run();
+if (args is not ["--skip-calibration-boundary"])
+{
+    CalibrationBoundaryFitterTests.Run();
+}
 CalibrationRingFitterTests.Run();
 CalibrationClockArtworkTests.Run();
 CalibrationWideBandArtworkTests.Run();
@@ -380,8 +389,8 @@ static void RunStreamingGenerationTests()
 static void TestDiscPresets()
 {
     DiscPresetJsonDocument builtIn = DiscPresetJsonStore.LoadBuiltIn();
-    Equal(4, builtIn.CdPresets.Count, "built-in CD preset count");
-    Equal(10, builtIn.DvdPresets.Count, "built-in DVD preset count");
+    Equal(5, builtIn.CdPresets.Count, "built-in CD preset count");
+    Equal(11, builtIn.DvdPresets.Count, "built-in DVD preset count");
     Equal(6, builtIn.BluRayPresets!.Count, "built-in Blu-ray preset count");
     Equal("zh-CN", builtIn.FallbackLanguage!, "built-in preset fallback language");
     True(
@@ -459,6 +468,19 @@ static void TestDiscPresets()
     Equal(359_848L, verbatim.Sectors, "Verbatim AZO 43438 preset sectors");
     Equal(24.837775, verbatim.InnerRadiusMm, "Verbatim AZO 43438 inner radius");
     Equal(58.020875, verbatim.OuterRadiusMm, "Verbatim AZO 43438 outer radius");
+    CdDiscPresetDefinition verbatimCdRw = builtIn.CdPresets.Single(
+        value => value.Id == "verbatim-cd-rw-43480");
+    Equal(359_849L, verbatimCdRw.Sectors, "Verbatim CD-RW 43480 total sectors");
+    Equal(359_847L, verbatimCdRw.UsableSectors!.Value, "Verbatim CD-RW 43480 usable sectors");
+    Equal(24.848239635686063, verbatimCdRw.InnerRadiusMm, "Verbatim CD-RW 43480 inner radius");
+    Equal(58.04108441549514, verbatimCdRw.OuterRadiusMm, "Verbatim CD-RW 43480 outer radius");
+    Equal(1_200.0, verbatimCdRw.LinearVelocityMmPerSecond, "Verbatim CD-RW 43480 scanning speed");
+    Equal(-6.950098231109995E-06, verbatimCdRw.PitchLinear, "Verbatim CD-RW 43480 linear pitch");
+    Equal(-1.7729155165195826E-05, verbatimCdRw.PitchQuadratic, "Verbatim CD-RW 43480 quadratic pitch");
+    Equal(1.630320478970918E-05, verbatimCdRw.PitchCubic, "Verbatim CD-RW 43480 cubic pitch");
+    True(verbatimCdRw.Description.Contains("97m34s23f", StringComparison.Ordinal)
+        && verbatimCdRw.Description.Contains("31CA0203", StringComparison.Ordinal),
+        "Verbatim CD-RW 43480 preserves the measured disc's ATIP and ring code");
     DvdDiscPresetDefinition dvd120 = builtIn.DvdPresets.Single(
         value => value.Id == "dvd-5-120mm");
     True(
@@ -480,6 +502,19 @@ static void TestDiscPresets()
     Equal(23.991460627731737, verbatimDvd43523.InnerRadiusMm, "Verbatim DVD-R AZO 43523 inner radius");
     Equal(57.964893657925366, verbatimDvd43523.OuterRadiusMm, "Verbatim DVD-R AZO 43523 outer radius");
     True(verbatimDvd43523.Contributor == "H4CNPE", "Verbatim DVD-R AZO 43523 contributor is recorded");
+    DvdDiscPresetDefinition verbatimDvdRw = builtIn.DvdPresets.Single(
+        value => value.Id == "verbatim-dvd-rw-43284-43285");
+    Equal(2_297_888U, verbatimDvdRw.TotalSectors, "Verbatim DVD-RW 43284/43285 sectors");
+    Equal(2_297_888U, verbatimDvdRw.UsableSectors!.Value, "Verbatim DVD-RW 43284/43285 usable sectors");
+    Equal(23.987195309256087, verbatimDvdRw.InnerRadiusMm, "Verbatim DVD-RW 43284/43285 inner radius");
+    Equal(57.96147511900821, verbatimDvdRw.OuterRadiusMm, "Verbatim DVD-RW 43284/43285 outer radius");
+    Equal(133.3, verbatimDvdRw.ChannelBitLengthNm, "Verbatim DVD-RW 43284/43285 channel bit length");
+    Equal(-6.895292187853084E-05, verbatimDvdRw.PitchLinear, "Verbatim DVD-RW 43284/43285 linear pitch");
+    Equal(0.00011961924687769748, verbatimDvdRw.PitchQuadratic, "Verbatim DVD-RW 43284/43285 quadratic pitch");
+    Equal(-7.110501507157955E-05, verbatimDvdRw.PitchCubic, "Verbatim DVD-RW 43284/43285 cubic pitch");
+    True(verbatimDvdRw.Description.Contains("MCC 01RW4X", StringComparison.Ordinal)
+        && verbatimDvdRw.Description.Contains("CD2260-DVRW-E47B2", StringComparison.Ordinal),
+        "Verbatim DVD-RW 43284/43285 preserves the measured disc's MID and ring code");
     DvdDiscPresetDefinition verbatimDvd43498 = builtIn.DvdPresets.Single(
         value => value.Id == "verbatim-dvd-plus-r-azo-43498");
     Equal(2_295_104U, verbatimDvd43498.TotalSectors, "Verbatim DVD+R AZO 43498 sectors");
@@ -621,8 +656,8 @@ static void TestDiscPresetJson()
             "user preset JSON keeps the fixed speed and channel-bit fields");
 
         DiscPresetJsonDocument merged = DiscPresetJsonStore.Merge(builtIn, created);
-        Equal(5, merged.CdPresets.Count, "merged CD preset count");
-        Equal(11, merged.DvdPresets.Count, "merged DVD preset count");
+        Equal(6, merged.CdPresets.Count, "merged CD preset count");
+        Equal(12, merged.DvdPresets.Count, "merged DVD preset count");
         Equal(7, merged.BluRayPresets!.Count, "merged Blu-ray preset count");
         DvdDiscPresetDefinition verbatim = merged.DvdPresets.Single(
             value => value.Id == "verbatim-dvd-r-azo-43533");

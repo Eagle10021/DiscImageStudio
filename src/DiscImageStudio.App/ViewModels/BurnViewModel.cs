@@ -79,6 +79,9 @@ public partial class BurnViewModel : ObservableObject
     private bool _allowRewritableOverwrite;
 
     [ObservableProperty]
+    private bool _ejectOnSuccess;
+
+    [ObservableProperty]
     private bool _isBurnRunning;
 
     public BurnViewModel(ShellViewModel shell, DiscParametersState state, DesignViewModel design)
@@ -588,6 +591,7 @@ public partial class BurnViewModel : ObservableObject
             int preparationRevision = _burnPreparationRevision;
             OpticalBurnMediaKind mediaKind = CurrentMediaKind;
             BurnWriteSpeedOption selectedWriteSpeed = SelectedSpeed ?? BurnWriteSpeedOption.Automatic;
+            bool ejectOnSuccess = EjectOnSuccess;
             OpticalBurnRequest request;
             string contentDescription;
             OpticalMediaCapacity capacity = await _opticalDiscBurner.GetMediaCapacityAsync(device.Id, mediaKind);
@@ -725,6 +729,8 @@ public partial class BurnViewModel : ObservableObject
             if (dvdCompatibilitySummary is not null)
                 contentDescription += Environment.NewLine + dvdCompatibilitySummary;
 
+            request = request with { EjectOnSuccess = ejectOnSuccess };
+
             // In-app danger modal; default focus sits on the refusing button.
             bool confirmed = await _shell.ConfirmAsync(
                 L.T("确认开始流式刻录"),
@@ -767,15 +773,15 @@ public partial class BurnViewModel : ObservableObject
             else if (capacity.RequiresErase)
             {
                 Dispatcher dispatcher = Dispatcher.CurrentDispatcher;
-                request = request with
-                {
-                    ConfirmDvdDataLoss = media => dispatcher.InvokeAsync(() => _shell.ConfirmAsync(
-                        L.T("确认清除盘片数据"),
-                        L.F($"光驱：{device.DisplayName}\n盘片：{media}\n\n")
-                            + L.T("继续刻录将先擦除盘片，原有数据将丢失。是否继续？"),
-                        L.T("擦除并刻录")))
-                        .Task.Unwrap().GetAwaiter().GetResult(),
-                };
+                bool ConfirmDataLoss(string media) => dispatcher.InvokeAsync(() => _shell.ConfirmAsync(
+                    L.T("确认清除盘片数据"),
+                    L.F($"光驱：{device.DisplayName}\n盘片：{media}\n\n")
+                        + L.T("继续刻录将先擦除盘片，原有数据将丢失。是否继续？"),
+                    L.T("擦除并刻录")))
+                    .Task.Unwrap().GetAwaiter().GetResult();
+                request = request.MediaKind is OpticalBurnMediaKind.CdAudio or OpticalBurnMediaKind.CdData
+                    ? request with { ConfirmCdRwErase = () => ConfirmDataLoss("CD-RW") }
+                    : request with { ConfirmDvdDataLoss = ConfirmDataLoss };
             }
             _shell.BeginBurnDockJob(request.MediaKind, request.ContentLength);
             _shell.AppendLog(

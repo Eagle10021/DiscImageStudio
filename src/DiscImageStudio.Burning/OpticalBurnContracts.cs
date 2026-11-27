@@ -111,6 +111,11 @@ public sealed record OpticalBurnRequest(
     OpticalBurnBufferOptions? BufferOptions = null,
     bool OverwriteRewritableMedia = false)
 {
+    public bool EjectOnSuccess { get; init; }
+
+    // Invoked on the burn worker under the media lock, before erasing a used CD-RW.
+    public Func<bool>? ConfirmCdRwErase { get; init; }
+
     // Invoked on the burn worker immediately before modifying a nonblank rewritable DVD.
     public Func<string, bool>? ConfirmDvdDataLoss { get; init; }
 
